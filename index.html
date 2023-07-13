@@ -1,0 +1,119 @@
+<html>
+	<head>
+		<link href="mermaid.min.css" rel="stylesheet">
+		<script src="gridjs.umd.js"></script>
+		<script>
+			let grids = [];
+			let routes = [
+				[
+					{ seq: 1, route: '73X', direction: 'I', stopSeq: 11 }, 
+					{ seq: 2, route: '278X', direction: 'O', stopSeq: 15 }, 
+					{ seq: 3, route: '48X', direction: 'O', stopSeq: 8 }
+				], 
+				[
+					{ seq: 4, route: '238M', direction: 'I', stopSeq: 2 }, 
+					{ seq: 5, route: '38A', direction: 'I', stopSeq: 8 }
+				]
+			];
+			let routesResult = [[],[]];
+
+			function getETA(routesKey, seq, route, direction, stopSeq){
+				let directions = {'I':'inbound','O':'outbound'};
+				let result;
+				Promise.all([
+					fetch(`https://data.etabus.gov.hk/v1/transport/kmb/route-stop/${route}/${directions[direction]}/1`)
+						.then(response => response.json())
+						.then(json => { return json.data }),
+					fetch('https://data.etabus.gov.hk/v1/transport/kmb/stop')  
+						.then(response => response.json())
+						.then(json => { return json.data }),
+					fetch(`https://data.etabus.gov.hk/v1/transport/kmb/route-eta/${route}/1`)
+						.then(response => response.json())
+						.then(json => { return json.data }),
+				]).then(results => {
+					result = results[0]
+								.filter(routeStop => { return stopSeq == -1?true:routeStop.seq == stopSeq })
+								.map(routeStop => {
+									stop = results[1].find(stop => stop.stop === routeStop.stop)
+									eta = results[2].find(eta => { return eta.seq == routeStop.seq && eta.dir === direction && eta.eta_seq === 1 })
+									eta2 = results[2].find(eta2 => { return eta2.seq == routeStop.seq && eta2.dir === direction && eta2.eta_seq === 2 })
+									eta3 = results[2].find(eta2 => { return eta2.seq == routeStop.seq && eta2.dir === direction && eta2.eta_seq === 3 })
+									return { 
+										seq: seq,
+										route: routeStop.route,
+										dest_tc: !!eta?eta.dest_tc:'NA',
+										stop_seq: routeStop.seq, 
+										name_tc: !!stop?stop.name_tc:'NA', 
+										eta_min: !!eta?Math.floor((Date.parse(eta.eta)-Date.parse(eta.data_timestamp))/60000):'NA',
+										eta2_min: !!eta2?Math.floor((Date.parse(eta2.eta)-Date.parse(eta2.data_timestamp))/60000):'NA',
+										eta3_min: !!eta3?Math.floor((Date.parse(eta3.eta)-Date.parse(eta3.data_timestamp))/60000):'NA'
+									};
+								});
+					routesResult[routesKey].push(result[0]);
+					if (!!grids[routesKey]) {
+						grids[routesKey].updateConfig({
+							data: routesResult[routesKey]
+						}).forceRender();
+					} else {
+						grids[routesKey] = new gridjs.Grid({ 
+							columns: [{ 
+								id: 'seq', 
+								name: 'Seq'
+							}, {
+								id: 'route', 
+								name: 'Route'
+							}, {
+								id: 'dest_tc',
+								name: 'Destination',
+								hidden: true
+							}, {
+								id: 'stop_seq',
+								name: 'Stop#',
+								hidden: true
+							}, {
+								id: 'name_tc',
+								name: 'Stop'
+							}, {
+								id: 'eta_min',
+								name: 'ETA1'
+							}, {
+								id: 'eta2_min',
+								name: 'ETA2'
+							}, {
+								id: 'eta3_min',
+								name: 'ETA3'
+							}],
+							data: routesResult[routesKey],
+							sort: true,
+							style: {
+								table: {
+									'font-family': 'Simsun', // 'Calibri Light'
+									'font-size': '40pt'
+								}
+							}
+						}).render(document.getElementById(`grid${routesKey}`));
+					}
+				});
+			}
+
+			routes.forEach((routes,routesKey) => {
+				routes.forEach(route => {
+					getETA(routesKey, route.seq, route.route, route.direction, route.stopSeq);
+				});
+			});
+
+            setTimeout(function(){
+				document.querySelectorAll('[data-column-id="seq"]').forEach(value => {
+					value.click();
+				});
+				document.querySelectorAll('[data-column-id="seq"]').forEach(value => {
+					value.style.display = "none";
+				});
+			},200);
+		</script>
+	</head>
+	<body>
+		<div id="grid0"></div><br><br>
+		<div id="grid1"></div>
+	</body>
+</html>
